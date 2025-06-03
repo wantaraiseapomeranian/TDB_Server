@@ -6,15 +6,19 @@ import { ScheduleService } from './schedule.service';
 import { ScheduleController } from './schedule.controller';
 import { Medicine } from '../medicine/entities/medicine.entity';
 import { User } from '../users/entities/users.entity';
-import { AuthModule } from '../auth/auth.module';     
-import { UsersModule } from '../users/users.module';    
+import { AuthModule } from '../auth/auth.module';
+import { UsersModule } from '../users/users.module';
+import { AccessTokenGuard } from 'src/auth/guard/bearer-token.guard';
+import { Machine } from 'src/machine/entities/machine.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Schedule, Medicine, User]),
-  AuthModule,
-  UsersModule,
+  imports: [
+    TypeOrmModule.forFeature([Schedule, Medicine, User, Machine]),
+    AuthModule,
+    UsersModule,
   ],
-  providers: [ScheduleService],
+  providers: [ScheduleService, AccessTokenGuard],
   controllers: [ScheduleController],
+  exports: [ScheduleService],
 })
 export class ScheduleModule {}

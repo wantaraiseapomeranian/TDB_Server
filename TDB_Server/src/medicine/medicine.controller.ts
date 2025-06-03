@@ -7,46 +7,148 @@ import {
   Param,
   Body,
   UseGuards,
+  NotFoundException,
+  ConflictException,
 } from '@nestjs/common';
 import { MedicineService } from './medicine.service';
 import { AccessTokenGuard } from '../auth/guard/bearer-token.guard';
+import { Medicine } from './entities/medicine.entity';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { User } from '../users/entities/users.entity';
 
-@Controller('medicine')
 @UseGuards(AccessTokenGuard)
+@Controller('medicine')
 export class MedicineController {
-  constructor(private readonly medicineService: MedicineService) {}
+  constructor(
+    private readonly medicineService: MedicineService,
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
+  ) {}
 
-  // 약 목록 조회
-  @Get('list/:memberId')
-  async getMedicineList(@Param('memberId') memberId: string) {
-    return this.medicineService.getMedicineListByMember(memberId);
+  /**
+   * 가족 연결 코드 기준 약 목록 조회
+   */
+  @Get('list/:connect')
+  async getMedicineList(@Param('connect') connect: string) {
+    return this.medicineService.getMedicineListByConnect(connect);
   }
 
-  // 약 정보 저장
-  @Post(':memberId')
+  /**
+   * 약 정보 등록
+   */
+  @Post()
   async addMedicine(
-    @Param('memberId') memberId: string,
-    @Body() medicineDto: any,
+    @Body('connect') connect: string,
+    @Body()
+    dto: {
+      medi_id?: string;
+      name?: string;
+      warning?: boolean;
+      start_date?: string;
+      end_date?: string;
+      requestUser?: string;
+    },
   ) {
-    return this.medicineService.addMedicine(memberId, medicineDto);
+    if (dto.requestUser) {
+      const requestingUser = await this.userRepo.findOne({
+        where: { user_id: dto.requestUser },
+        select: ['role', 'connect']
+      });
+      
+      if (!requestingUser) {
+        throw new NotFoundException('요청 사용자를 찾을 수 없습니다.');
+      }
+      
+      if (requestingUser.role !== 'parent') {
+        throw new ConflictException('약 등록은 메인 계정(부모)만 가능합니다. 서브 계정은 스케줄만 설정할 수 있습니다.');
+      }
+      
+      if (requestingUser.connect !== connect) {
+        throw new ConflictException('다른 가족의 약을 등록할 수 없습니다.');
+      }
+      
+      console.log(`🔍 약 등록 권한 확인 완료 - 부모 계정: ${dto.requestUser}, connect: ${connect}`);
+    }
+
+    const medicineData: Partial<Medicine> = {
+      medi_id: dto.medi_id,
+      name: dto.name,
+      warning: dto.warning,
+      start_date: dto.start_date ? new Date(dto.start_date) : undefined,
+      end_date: dto.end_date ? new Date(dto.end_date) : undefined,
+    };
+    return this.medicineService.addMedicine(connect, medicineData);
   }
 
-  // 약 정보 수정
-  @Put(':memberId/:medicineId')
+  /**
+   * 약 상세 조회
+   */
+  @Get(':connect/:medi_id')
+  async getMedicine(
+    @Param('connect') connect: string,
+    @Param('medi_id') medi_id: string,
+  ) {
+    return this.medicineService.findOne(medi_id, connect);
+  }
+
+  /**
+   * 약 정보 수정
+   */
+  @Put(':id')
   async updateMedicine(
-    @Param('memberId') memberId: string,
-    @Param('medicineId') medicineId: string,
-    @Body() medicineDto: any,
+    @Param('id') id: string,
+    @Body('connect') connect: string,
+    @Body()
+    updateDto: {
+      name?: string;
+      warning?: boolean;
+      start_date?: string;
+      end_date?: string;
+    },
   ) {
-    return this.medicineService.updateMedicine(memberId, medicineId, medicineDto);
+    const medicineUpdateData: Partial<Medicine> = {
+      name: updateDto.name,
+      warning: updateDto.warning,
+      start_date: updateDto.start_date
+        ? new Date(updateDto.start_date)
+        : undefined,
+      end_date: updateDto.end_date ? new Date(updateDto.end_date) : undefined,
+    };
+    return this.medicineService.updateMedicine(id, connect, medicineUpdateData);
   }
 
-  // 약 정보 삭제
-  @Delete(':memberId/:medicineId')
+  /**
+   * 약 정보 삭제
+   */
+  @Delete(':connect/:medi_id')
   async deleteMedicine(
-    @Param('memberId') memberId: string,
-    @Param('medicineId') medicineId: string,
+    @Param('connect') connect: string,
+    @Param('medi_id') medi_id: string,
   ) {
-    return this.medicineService.deleteMedicine(memberId, medicineId);
+    return this.medicineService.deleteMedicine(medi_id, connect);
+  }
+
+  /**
+   * 약 이름으로 검색
+   */
+  @Get('search/:connect/:name')
+  async searchMedicine(
+    @Param('connect') connect: string,
+    @Param('name') name: string,
+  ) {
+    return this.medicineService.searchByName(connect, name);
+  }
+
+  // 🔧 디버그용: 잘못된 Machine 데이터 정리
+  @Post('debug/clear-machines/:connect')
+  async clearMachineData(@Param('connect') connect: string) {
+    return this.medicineService.clearMachineData(connect);
+  }
+
+  // 🔧 디버그용: connect 데이터 조회
+  @Get('debug/connect/:connect')
+  async debugConnectData(@Param('connect') connect: string) {
+    return this.medicineService.debugConnectData(connect);
   }
 }

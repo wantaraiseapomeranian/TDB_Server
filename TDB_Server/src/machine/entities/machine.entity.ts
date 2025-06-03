@@ -7,17 +7,17 @@ export class Machine {
   @PrimaryColumn({ type: 'varchar', length: 50 })
   machine_id: string;
 
-  @PrimaryColumn({ type: 'varchar', length: 50 })
-  medi_id: string;
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  medi_id: string | null;
+
+  @Column({ type: 'varchar', length: 50 })
+  owner: string;
 
   @Column({ type: 'varchar', length: 50, nullable: true })
   error_status: string;
 
   @Column({ type: 'datetime' })
   last_error_at: Date;
-
-  @Column({ type: 'varchar', length: 50 })
-  owner: string;
 
   @Column({ type: 'int' })
   total: number;
@@ -28,12 +28,13 @@ export class Machine {
   @Column({ type: 'tinyint', nullable: true })
   slot: number;
 
-  // 🔗 연관 관계 설정
+  // owner → users.connect
   @ManyToOne(() => User, (user) => user.machines)
-  @JoinColumn({ name: 'owner' })
+  @JoinColumn({ name: 'owner', referencedColumnName: 'connect' })
   owner_user: User;
 
-  @ManyToOne(() => Medicine, (medicine) => medicine.machines)
-  @JoinColumn({ name: 'medi_id' })
-  medicine: Medicine;
+  // medi_id → medicine.medi_id (nullable)
+  @ManyToOne(() => Medicine, { nullable: true })
+  @JoinColumn({ name: 'medi_id', referencedColumnName: 'medi_id' })
+  medicine: Medicine | null;
 }

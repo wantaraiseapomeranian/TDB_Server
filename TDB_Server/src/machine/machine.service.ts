@@ -39,7 +39,9 @@ export class DispenserService {
   }
 
   async findAllMachine(): Promise<Machine[]> {
-    return this.machineRepository.find();
+    return this.machineRepository.find({
+      relations: ['owner_user'],
+    });
   }
 
   async verifyUid(
@@ -77,41 +79,39 @@ export class DispenserService {
   }
 
   async findUserByUid(uid: string): Promise<User | null> {
-    return await this.userRepository.findOne({ where: { k_uid: uid } });
+    return this.userRepository.findOne({ where: { k_uid: uid } });
   }
 
-  async getTodayScheduleByUid(uid: string): Promise<any> {
+  async getTodayScheduleByUid(uid: string) {
     const user = await this.findUserByUid(uid);
     if (!user) throw new NotFoundException('사용자를 찾을 수 없습니다.');
 
     const days = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
     const weekday = days[new Date().getDay()];
 
-    const schedules = await this.scheduleRepository.find({
-      where: {
-        user_id: user.user_id,
-        day_of_week: weekday,
-      },
-      relations: ['medicine'],
-    });
+    const schedules = await this.scheduleRepository
+      .createQueryBuilder('schedule')
+      .leftJoinAndSelect('schedule.medicine', 'medicine')
+      .where('schedule.connect = :connect', { connect: user.connect })
+      .andWhere('FIND_IN_SET(:day, schedule.day_of_week)', { day: weekday })
+      .getMany();
 
-    const timeMap = {
+    const timeMap: Record<
+      'morning' | 'afternoon' | 'evening',
+      { medi_id: string; dose: number }[]
+    > = {
       morning: [],
       afternoon: [],
       evening: [],
     };
 
     for (const sched of schedules) {
-        if (sched.dose > 0 && Array.isArray(sched.time_of_day)) {
-            for (const time of sched.time_of_day) {
-                if (timeMap[time]) {
-                    timeMap[time].push({
-                        medi_id: sched.medi_id,
-                        dose: sched.dose,
-                    });
-                }
-            }
-        }
+      if (sched.time_of_day && sched.dose > 0) {
+        timeMap[sched.time_of_day]?.push({
+          medi_id: sched.medi_id,
+          dose: sched.dose,
+        });
+      }
     }
 
     return {
@@ -124,12 +124,23 @@ export class DispenserService {
   async getMedicineRemainByMachine(m_uid: string) {
     const machineRows = await this.machineRepository.find({
       where: { machine_id: m_uid },
-      relations: ['medicine'],
     });
+
+    const medicineIds = machineRows
+      .map((row) => row.medi_id)
+      .filter((id): id is string => id !== null && !id.startsWith('TEMP_'));
+    
+    const medicines = await this.medicineRepository.findBy({
+      medi_id: In(medicineIds),
+    });
+
+    const medicineMap = new Map(medicines.map((m) => [m.medi_id, m]));
 
     return machineRows.map((row) => ({
       medi_id: row.medi_id,
-      name: row.medicine?.name ?? '(이름 없음)',
+      name: row.medi_id && !row.medi_id.startsWith('TEMP_') 
+        ? medicineMap.get(row.medi_id)?.name ?? '(이름 없음)' 
+        : '(약 미등록)',
       total: row.total,
       remain: row.remain,
       slot: row.slot,
@@ -142,20 +153,23 @@ export class DispenserService {
       relations: ['owner_user'],
     });
 
-    const userMap = new Map();
+    const userMap = new Map<
+      string,
+      { user_id: string; name: string; role: string }
+    >();
 
-    machines.forEach((m) => {
-      const u = m.owner_user;
-      if (u) {
-        userMap.set(u.user_id, {
-          user_id: u.user_id,
-          name: u.name,
-          role: u.role,
+    for (const m of machines) {
+      const user = m.owner_user;
+      if (user) {
+        userMap.set(user.user_id, {
+          user_id: user.user_id,
+          name: user.name,
+          role: user.role,
         });
       }
-    });
+    }
 
-    return [...userMap.values()];
+    return Array.from(userMap.values());
   }
 
   async getSchedulesByMachineAndDate(m_uid: string, date: string) {
@@ -168,21 +182,21 @@ export class DispenserService {
       relations: ['owner_user'],
     });
 
-    const userIds = machineRows
-      .map((m) => m.owner_user?.user_id)
-      .filter(Boolean);
+    const connects = machineRows
+      .map((m) => m.owner_user?.connect)
+      .filter((c): c is string => !!c);
 
-    if (userIds.length === 0) {
+    if (connects.length === 0) {
       return [];
     }
 
-    const schedules = await this.scheduleRepository.find({
-      where: {
-        user_id: In(userIds),
-        day_of_week: dayOfWeek,
-      },
-      relations: ['user', 'medicine'],
-    });
+    const schedules = await this.scheduleRepository
+      .createQueryBuilder('schedule')
+      .leftJoinAndSelect('schedule.user', 'user')
+      .leftJoinAndSelect('schedule.medicine', 'medicine')
+      .where('schedule.connect IN (:...connects)', { connects })
+      .andWhere('FIND_IN_SET(:day, schedule.day_of_week)', { day: dayOfWeek })
+      .getMany();
 
     return schedules
       .filter((s) => s.user && s.medicine)

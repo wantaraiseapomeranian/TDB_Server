@@ -4,8 +4,16 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
+import { Request } from 'express';
 import { AuthService } from '../auth.service';
 import { UsersService } from '../../users/users.service';
+import { User } from '../../users/entities/users.entity';
+
+interface AuthenticatedRequest extends Request {
+  user: User;
+  token: string;
+  tokenType: 'access' | 'refresh';
+}
 
 @Injectable()
 export class BearerTokenGuard implements CanActivate {
@@ -15,7 +23,7 @@ export class BearerTokenGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const req = context.switchToHttp().getRequest();
+    const req = context.switchToHttp().getRequest<AuthenticatedRequest>();
 
     const rawToken = req.headers['authorization'];
     if (!rawToken) {
@@ -25,7 +33,7 @@ export class BearerTokenGuard implements CanActivate {
     const token = this.authService.extractTokenFromHeader(rawToken, true);
     const decoded = this.authService.verifyToken(token);
 
-    const user = await this.usersService.getUserById(decoded.sub); //
+    const user = await this.usersService.getUserById(decoded.sub);
     if (!user) {
       throw new UnauthorizedException('해당 사용자를 찾을 수 없습니다.');
     }
@@ -43,7 +51,7 @@ export class AccessTokenGuard extends BearerTokenGuard {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     await super.canActivate(context);
 
-    const req = context.switchToHttp().getRequest();
+    const req = context.switchToHttp().getRequest<AuthenticatedRequest>();
     if (req.tokenType !== 'access') {
       throw new UnauthorizedException('Access 토큰이 아닙니다.');
     }
@@ -57,7 +65,7 @@ export class RefreshTokenGuard extends BearerTokenGuard {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     await super.canActivate(context);
 
-    const req = context.switchToHttp().getRequest();
+    const req = context.switchToHttp().getRequest<AuthenticatedRequest>();
     if (req.tokenType !== 'refresh') {
       throw new UnauthorizedException('Refresh 토큰이 아닙니다.');
     }

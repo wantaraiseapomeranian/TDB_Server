@@ -12,9 +12,7 @@ import { Schedule } from './schedule/entities/schedule.entity';
 import { Medicine } from './medicine/entities/medicine.entity';
 import { SupplementModule } from './supplement/supplement.module';
 import { MachineModule } from './machine/machine.module';
-import { machine } from 'os';
 import { Machine } from './machine/entities/machine.entity';
-
 
 @Module({
   imports: [
@@ -46,7 +44,6 @@ import { Machine } from './machine/entities/machine.entity';
     FamilyModule,
     SupplementModule,
     MachineModule,
-    
   ],
 })
 export class AppModule {}

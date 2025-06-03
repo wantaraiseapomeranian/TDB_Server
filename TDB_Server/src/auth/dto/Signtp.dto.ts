@@ -1,4 +1,10 @@
-import { IsString, IsEnum, IsOptional, IsDateString, IsNumber } from 'class-validator';
+import {
+  IsString,
+  IsEnum,
+  IsOptional,
+  IsDateString,
+  IsNumber,
+} from 'class-validator';
 
 export class SignupDto {
   @IsString() id: string;
@@ -6,7 +12,10 @@ export class SignupDto {
   @IsString() name: string;
   @IsDateString() birthDate: string;
   @IsNumber() age: number;
-  @IsEnum(['main', 'sub']) accountType: 'parent' | 'child';
+  @IsEnum(['parent', 'child']) accountType: 'parent' | 'child';
+  @IsOptional()
+  @IsEnum(['parent', 'child'])
+  role?: 'parent' | 'child';
   @IsOptional() @IsString() uuid?: string;
   @IsOptional() @IsString() parentUuid?: string;
 }

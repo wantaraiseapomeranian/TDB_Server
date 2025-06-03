@@ -2,10 +2,11 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { User } from '../users/entities/users.entity';
 import { Repository } from 'typeorm';
+import { User, UserRole } from '../users/entities/users.entity';
 
 @Injectable()
 export class FamilyService {
@@ -14,18 +15,65 @@ export class FamilyService {
     private readonly userRepo: Repository<User>,
   ) {}
 
+  // 사용자 ID로 가족 구성원 목록 조회
+  async getFamilyMembersByUserId(userId: string): Promise<{ success: boolean; data: User[] }> {
+    // 먼저 요청한 사용자 정보 조회
+    const user = await this.userRepo.findOne({
+      where: { user_id: userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('사용자를 찾을 수 없습니다.');
+    }
+
+    // connect가 null인 경우 에러 처리
+    if (!user.connect) {
+      throw new BadRequestException('사용자의 connect 정보가 없습니다.');
+    }
+
+    // 같은 connect를 가진 모든 사용자 조회 (가족 구성원)
+    const familyMembers = await this.userRepo.find({
+      where: { connect: user.connect },
+      select: [
+        'user_id',
+        'name', 
+        'role',
+        'birthDate',
+        'age',
+        'connect',
+        'took_today',
+        'k_uid',
+        'm_uid'
+      ],
+    });
+
+    return {
+      success: true,
+      data: familyMembers,
+    };
+  }
+
+  // 부모 UUID로 자녀 목록 조회
   async getFamilyMembersByUuid(uuid: string): Promise<User[]> {
-    const parent = await this.userRepo.findOne({ where: { k_uid: uuid } });
+    const parent = await this.userRepo.findOne({
+      where: { k_uid: uuid, role: UserRole.PARENT },
+    });
 
     if (!parent) {
-      throw new NotFoundException('부모 사용자를 찾을 수 없습니다.');
+      throw new NotFoundException('메인 계정을 찾을 수 없습니다.');
+    }
+
+    // connect가 null인 경우 빈 배열 반환
+    if (!parent.connect) {
+      return [];
     }
 
     return this.userRepo.find({
-      where: { connect: parent.connect, role: 'child' },
+      where: { connect: parent.connect, role: UserRole.CHILD },
     });
   }
 
+  // 자녀 구성원 추가
   async addFamilyMember(data: {
     user_id: string;
     uid: string;
@@ -42,17 +90,35 @@ export class FamilyService {
       throw new ConflictException('이미 등록된 구성원입니다.');
     }
 
-    const child = this.userRepo.create({
-      ...data,
-      role: 'child',
-      took_today: false,
+    const parent = await this.userRepo.findOne({
+      where: { user_id: data.user_id, role: UserRole.PARENT },
     });
 
+    if (!parent) {
+      throw new NotFoundException('부모 사용자를 찾을 수 없습니다.');
+    }
+
+    // parent.connect가 null인 경우 에러 처리
+    if (!parent.connect) {
+      throw new BadRequestException('부모 사용자의 connect 정보가 없습니다.');
+    }
+
+    // 자식 계정 생성
+    const childData = {
+      ...data,
+      role: UserRole.CHILD,
+      connect: parent.connect,
+    };
+
+    const child = this.userRepo.create(childData);
     return this.userRepo.save(child);
   }
 
+  // 자녀 정보 수정
   async updateFamilyMember(id: string, updateData: Partial<User>) {
-    const member = await this.userRepo.findOne({ where: { user_id: id, role: 'child' } });
+    const member = await this.userRepo.findOne({
+      where: { user_id: id, role: UserRole.CHILD },
+    });
 
     if (!member) {
       throw new NotFoundException('해당 구성원을 찾을 수 없습니다.');
@@ -62,8 +128,12 @@ export class FamilyService {
     return this.userRepo.save(member);
   }
 
+  // 자녀 삭제
   async deleteFamilyMember(id: string): Promise<{ success: true }> {
-    const result = await this.userRepo.delete({ user_id: id, role: 'child' });
+    const result = await this.userRepo.delete({
+      user_id: id,
+      role: UserRole.CHILD,
+    });
 
     if (result.affected === 0) {
       throw new NotFoundException('삭제할 구성원을 찾을 수 없습니다.');
@@ -72,9 +142,10 @@ export class FamilyService {
     return { success: true };
   }
 
+  // 전체 자녀 스케줄 요약
   async getFamilySummary() {
     const users = await this.userRepo.find({
-      where: { role: 'child' },
+      where: { role: UserRole.CHILD },
       relations: ['schedules'],
     });
 
