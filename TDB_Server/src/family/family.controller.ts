@@ -14,7 +14,7 @@ import { AccessTokenGuard } from '../auth/guard/bearer-token.guard';
 import { AuthService } from 'src/auth/auth.service';
 import { UsersService } from 'src/users/users.service';
 
-@UseGuards(AccessTokenGuard)
+// @UseGuards(AccessTokenGuard) // 임시로 주석처리 (대시보드 테스트용)
 @Controller('family')
 export class FamilyController {
   constructor(
@@ -31,6 +31,14 @@ export class FamilyController {
   @Get('members/:userId')
   async getMembers(@Param('userId') userId: string) {
     return this.familyService.getFamilyMembersByUserId(userId);
+  }
+
+  /**
+   * connect ID를 통한 가족 구성원 목록 조회 (대시보드용)
+   */
+  @Get('members-by-connect/:connect')
+  async getMembersByConnect(@Param('connect') connect: string) {
+    return this.familyService.getFamilyMembersByConnect(connect);
   }
 
   /**

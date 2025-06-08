@@ -13,6 +13,8 @@ import { Medicine } from './medicine/entities/medicine.entity';
 import { SupplementModule } from './supplement/supplement.module';
 import { MachineModule } from './machine/machine.module';
 import { Machine } from './machine/entities/machine.entity';
+import { DoseHistoryModule } from './dose-history/dose-history.module';
+import { DoseHistory } from './dose-history/dose-history.entity';
 
 @Module({
   imports: [
@@ -30,7 +32,7 @@ import { Machine } from './machine/entities/machine.entity';
         username: config.get<string>('DB_USERNAME'),
         password: config.get<string>('DB_PASSWORD'),
         database: config.get<string>('DB_DATABASE'),
-        entities: [User, Schedule, Medicine, Machine], // 또는 __dirname + '/../**/*.entity{.ts,.js}'
+        entities: [User, Schedule, Medicine, Machine, DoseHistory], // 또는 __dirname + '/../**/*.entity{.ts,.js}'
         synchronize: false, // 개발 중엔 true (운영 시 false 권장)
         charset: 'utf8mb4',
       }),
@@ -44,6 +46,7 @@ import { Machine } from './machine/entities/machine.entity';
     FamilyModule,
     SupplementModule,
     MachineModule,
+    DoseHistoryModule,
   ],
 })
 export class AppModule {}

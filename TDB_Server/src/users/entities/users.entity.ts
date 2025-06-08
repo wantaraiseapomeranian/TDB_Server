@@ -6,6 +6,8 @@ import {
 } from 'typeorm';
 import { Machine } from 'src/machine/entities/machine.entity';
 import { Schedule } from 'src/schedule/entities/schedule.entity';
+import { Medicine } from 'src/medicine/entities/medicine.entity';
+import { DoseHistory } from 'src/dose-history/dose-history.entity';
 
 export enum UserRole {
   PARENT = 'parent',
@@ -38,11 +40,11 @@ export class User {
   })
   role: UserRole;
 
-  @Column({ type: 'tinyint', width: 1, default: 0 })
+  @Column({ type: 'int', default: 0 })
   took_today: number;
 
-  @Column({ type: 'varchar', length: 255, nullable: true })
-  birthDate: string;
+  @Column({ type: 'date', nullable: true })
+  birthDate?: string;
 
   @Column({ type: 'int', nullable: true })
   age: number;
@@ -51,9 +53,25 @@ export class User {
   refresh_token: string;
 
   // OneToMany: machine.owner → users.connect
-  @OneToMany(() => Machine, (machine) => machine.owner_user)
+  @OneToMany(() => Machine, (machine) => machine.ownerUser)
   machines: Machine[];
+
+  // OneToMany: machine.machine_id → users.m_uid (기기 소유자)
+  @OneToMany(() => Machine, (machine) => machine.user)
+  ownedMachines: Machine[];
+
+  // OneToMany: medicine.connect → users.connect
+  @OneToMany(() => Medicine, (medicine) => medicine.user)
+  medicines: Medicine[];
 
   @OneToMany(() => Schedule, (schedule) => schedule.user)
   schedules: Schedule[];
+
+  // OneToMany: schedule.connect → users.connect
+  @OneToMany(() => Schedule, (schedule) => schedule.connectedUser)
+  connectedSchedules: Schedule[];
+
+  // OneToMany: dose_history.user_id → users.user_id
+  @OneToMany(() => DoseHistory, (doseHistory) => doseHistory.user)
+  doseHistories: DoseHistory[];
 }

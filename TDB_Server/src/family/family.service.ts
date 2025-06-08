@@ -53,6 +53,34 @@ export class FamilyService {
     };
   }
 
+  // connect ID로 가족 구성원 목록 조회 (대시보드용)
+  async getFamilyMembersByConnect(connect: string): Promise<{ success: boolean; data: User[] }> {
+    if (!connect) {
+      throw new BadRequestException('connect 정보가 필요합니다.');
+    }
+
+    // 같은 connect를 가진 모든 사용자 조회 (가족 구성원)
+    const familyMembers = await this.userRepo.find({
+      where: { connect },
+      select: [
+        'user_id',
+        'name', 
+        'role',
+        'birthDate',
+        'age',
+        'connect',
+        'took_today',
+        'k_uid',
+        'm_uid'
+      ],
+    });
+
+    return {
+      success: true,
+      data: familyMembers,
+    };
+  }
+
   // 부모 UUID로 자녀 목록 조회
   async getFamilyMembersByUuid(uuid: string): Promise<User[]> {
     const parent = await this.userRepo.findOne({
@@ -103,12 +131,18 @@ export class FamilyService {
       throw new BadRequestException('부모 사용자의 connect 정보가 없습니다.');
     }
 
-    // 자식 계정 생성
+    // 🔥 자식 계정 생성 시 부모의 m_uid도 상속
     const childData = {
       ...data,
       role: UserRole.CHILD,
       connect: parent.connect,
+      m_uid: parent.m_uid, // 🔥 부모의 m_uid 상속
     };
+
+    console.log(`[FamilyService] 자식 계정 생성: ${data.name}`);
+    console.log(`  부모 connect: ${parent.connect}`);
+    console.log(`  부모 m_uid: ${parent.m_uid}`);
+    console.log(`  자식이 상속받을 m_uid: ${childData.m_uid}`);
 
     const child = this.userRepo.create(childData);
     return this.userRepo.save(child);

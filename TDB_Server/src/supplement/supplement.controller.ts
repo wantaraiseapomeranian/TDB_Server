@@ -7,6 +7,8 @@ import {
   Param,
   Query,
   UseGuards,
+  Delete,
+  BadRequestException,
 } from '@nestjs/common';
 import { SupplementService } from './supplement.service';
 import { AccessTokenGuard } from '../auth/guard/bearer-token.guard';
@@ -27,19 +29,47 @@ export class SupplementController {
   /**
    * 2. 영양제 등록
    */
-  @Post()
+  @Post(':memberId')
   async saveSupplement(
+    @Param('memberId') memberId: string,
     @Body()
     data: {
-      connect: string;
-      medi_id: string;
       name: string;
-      warning?: boolean;
-      start_date?: string;
-      end_date?: string;
+      manufacturer?: string;
+      ingredients?: string;
+      primaryFunction?: string;
+      intakeMethod?: string;
+      precautions?: string;
+      startDate?: string;
+      endDate?: string;
+      memberName?: string;
+      memberType?: string;
+      target_users?: string[] | null;
     },
   ) {
-    return this.supplementService.saveSupplement(data);
+    console.log('🔥 [Supplement Controller] 파라미터 체크:', { memberId, bodyData: Object.keys(data) });
+    
+    if (!memberId || memberId === 'undefined') {
+      throw new BadRequestException('유효하지 않은 memberId입니다.');
+    }
+    // memberId를 데이터에 추가하고 필드명 매핑
+    const supplementData = {
+      name: data.name,
+      manufacturer: data.manufacturer,
+      ingredients: data.ingredients,
+      primaryFunction: data.primaryFunction,
+      intakeMethod: data.intakeMethod,
+      precautions: data.precautions,
+      memberName: data.memberName,
+      memberType: data.memberType,
+      target_users: data.target_users,
+      connect: memberId, // connect 필드에 memberId 사용
+      medi_id: `supplement_${Date.now()}`, // 고유 ID 생성
+      start_date: data.startDate, // startDate -> start_date 매핑
+      end_date: data.endDate, // endDate -> end_date 매핑
+    };
+    
+    return this.supplementService.saveSupplement(supplementData);
   }
 
   /**
@@ -91,6 +121,62 @@ export class SupplementController {
   ) {
     return this.supplementService.completeSupplement(body.connect, {
       supplementId: body.supplementId,
+    });
+  }
+
+  /**
+   * 2-1. 영양제 수정
+   */
+  @Put(':memberId/:supplementId')
+  async updateSupplement(
+    @Param('memberId') memberId: string,
+    @Param('supplementId') supplementId: string,
+    @Body()
+    data: {
+      name: string;
+      manufacturer?: string;
+      ingredients?: string;
+      primaryFunction?: string;
+      intakeMethod?: string;
+      precautions?: string;
+      startDate?: string;
+      endDate?: string;
+      memberName?: string;
+      memberType?: string;
+      target_users?: string[] | null;
+    },
+  ) {
+    // 영양제 수정 데이터 매핑
+    const supplementData = {
+      name: data.name,
+      manufacturer: data.manufacturer,
+      ingredients: data.ingredients,
+      primaryFunction: data.primaryFunction,
+      intakeMethod: data.intakeMethod,
+      precautions: data.precautions,
+      memberName: data.memberName,
+      memberType: data.memberType,
+      target_users: data.target_users,
+      connect: memberId,
+      medi_id: supplementId,
+      start_date: data.startDate,
+      end_date: data.endDate,
+    };
+    
+    return this.supplementService.saveSupplement(supplementData);
+  }
+
+  /**
+   * 2-2. 영양제 삭제
+   */
+  @Delete(':memberId/:supplementId')
+  async deleteSupplement(
+    @Param('memberId') memberId: string,
+    @Param('supplementId') supplementId: string,
+  ) {
+    // 간단한 삭제 로직 - completeSupplement 재사용 또는 직접 삭제
+    return this.supplementService.completeSupplement(memberId, {
+      supplementId: supplementId,
     });
   }
 }

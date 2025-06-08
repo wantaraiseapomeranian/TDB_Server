@@ -85,6 +85,7 @@ export class AuthService {
 
       // 1. 역할 확인 및 connect 설정
       let connect: string | null;
+      let inheritedMuid: string | null = null;
 
       if (userRole === UserRole.PARENT) {
         connect = id;
@@ -109,7 +110,9 @@ export class AuthService {
         }
 
         connect = parent.connect;
+        inheritedMuid = parent.m_uid;
         this.logger.debug(`[signup] 서브 계정 - 메인 계정의 connect = ${connect}`);
+        this.logger.debug(`[signup] 서브 계정 - 부모로부터 상속받은 m_uid = ${inheritedMuid}`);
       }
 
       // 2. connect 값 누락 확인 (❗ 핵심 수정 포인트)
@@ -128,6 +131,7 @@ export class AuthService {
         age,
         role: userRole,
         connect,
+        m_uid: inheritedMuid,
         took_today: 0,
       });
 
@@ -234,7 +238,7 @@ export class AuthService {
       role: user.role,
       type,
     };
-    const expiresIn = type === 'access' ? '10h' : '7d';
+    const expiresIn = type === 'access' ? '1d' : '7d';
     this.logger.debug(`JWT 생성 - Type: ${type}, Exp: ${expiresIn}`);
     return this.jwtService.sign(payload, { expiresIn });
   }

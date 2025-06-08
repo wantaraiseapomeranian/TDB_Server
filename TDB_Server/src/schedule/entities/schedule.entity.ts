@@ -39,20 +39,24 @@ export class Schedule {
   @Column({ type: 'datetime', default: () => 'CURRENT_TIMESTAMP' })
   created_at: Date;
 
-  // 연결된 사용자
+  // 연결된 사용자 (fk_schedule_user: user_id → users.user_id)
   @ManyToOne(() => User, (user) => user.schedules, { nullable: true })
   @JoinColumn({ name: 'user_id', referencedColumnName: 'user_id' })
   user: User;
 
-  // connect → users.connect
-  @ManyToOne(() => User, { nullable: false })
+  // connect → users.connect (fk_schedule_connect)
+  @ManyToOne(() => User, (user) => user.connectedSchedules, { nullable: false })
   @JoinColumn({ name: 'connect', referencedColumnName: 'connect' })
   connectedUser: User;
 
-  // Medicine 관계 (medi_id 기준 단일 FK 연결만 우선 처리)
+  // Medicine 관계 (schedule_medi: medi_id → medicine.medi_id)
+  // Note: Medicine은 복합 PK (medi_id, connect)를 가지므로 복합키 매칭 필요
   @ManyToOne(() => Medicine, (medicine) => medicine.schedules, {
     nullable: true,
   })
-  @JoinColumn({ name: 'medi_id', referencedColumnName: 'medi_id' })
+  @JoinColumn([
+    { name: 'medi_id', referencedColumnName: 'medi_id' },
+    { name: 'connect', referencedColumnName: 'connect' }
+  ])
   medicine: Medicine;
 }

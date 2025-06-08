@@ -102,7 +102,7 @@ export class UsersService {
   }
 
   /**
-   * 🔥 디스펜서 등록 (m_uid 업데이트)
+   * 🔥 디스펜서 등록 (m_uid 업데이트만, max_slot 기본 3개 고정)
    */
   async registerDispenser(userId: string, m_uid: string): Promise<User> {
     const user = await this.getUserById(userId);
@@ -129,54 +129,11 @@ export class UsersService {
       throw new BadRequestException('이미 등록된 디스펜서입니다.');
     }
 
-    // 🔥 외래키 제약조건 에러 방지: User의 m_uid를 먼저 null로 설정
+    // 🔥 같은 connect 그룹의 모든 사용자 m_uid 업데이트
     const allUsersInGroup = await this.usersRepository.find({
       where: { connect: user.connect }
     });
 
-    for (const groupUser of allUsersInGroup) {
-      groupUser.m_uid = null;
-      await this.usersRepository.save(groupUser);
-    }
-    console.log(`[UsersService] 기존 m_uid 정리 완료: connect ${user.connect} 그룹 ${allUsersInGroup.length}명`);
-
-    // 🔥 기존 PENDING Machine 레코드 삭제 (잘못된 레코드 정리)
-    await this.machineRepository.delete({
-      owner: user.connect,
-      machine_id: `PENDING_${user.connect}`
-    });
-
-    // 🔥 잘못된 형식의 Machine 레코드도 정리
-    if (user.m_uid) {
-      await this.machineRepository.delete({
-        owner: user.connect,
-        machine_id: user.m_uid  // 기존 m_uid로 생성된 잘못된 레코드
-      });
-    }
-
-    console.log(`[UsersService] 기존 잘못된 Machine 레코드 정리 완료: connect ${user.connect}`);
-
-    // 🔥 외래키 제약조건 만족을 위한 기본 Machine 레코드 생성
-    const existingMachine = await this.machineRepository.findOne({
-      where: { machine_id: m_uid }
-    });
-
-    if (!existingMachine) {
-      const baseMachine = this.machineRepository.create({
-        machine_id: m_uid,
-        owner: user.connect,
-        medi_id: null,
-        error_status: null,
-        last_error_at: new Date(),
-        total: 0,
-        remain: 0,
-        slot: null, // 기본 레코드는 슬롯 없음
-      } as any);
-      await this.machineRepository.save(baseMachine);
-      console.log(`[UsersService] 기본 Machine 레코드 생성: ${m_uid}`);
-    }
-
-    // 🔥 새로운 m_uid로 User 업데이트
     for (const groupUser of allUsersInGroup) {
       groupUser.m_uid = m_uid;
       await this.usersRepository.save(groupUser);
@@ -184,7 +141,7 @@ export class UsersService {
     
     console.log(`[UsersService] 디스펜서 등록 완료: connect ${user.connect} 그룹 전체 → ${m_uid}`);
     console.log(`[UsersService] 업데이트된 사용자 수: ${allUsersInGroup.length}명`);
-    console.log(`[UsersService] 슬롯별 Machine 레코드는 약 추가 시 생성됩니다.`);
+    console.log(`[UsersService] Machine 테이블 레코드는 약 추가 시 슬롯별로 생성됩니다.`);
     
     // 업데이트된 부모 계정 정보 반환
     const updatedUser = await this.getUserById(userId);
@@ -218,5 +175,60 @@ export class UsersService {
     
     console.log(`[UsersService] 데일리 키트 등록 완료: ${userId} -> ${k_uid}`);
     return updatedUser;
+  }
+
+  /**
+   * 🔥 디스펜서 정보 조회 (max_slot 기본 3개 고정)
+   */
+  async getDispenserInfo(userId: string): Promise<{ m_uid: string | null; max_slot: number }> {
+    const user = await this.getUserById(userId);
+    if (!user) {
+      throw new NotFoundException('사용자를 찾을 수 없습니다.');
+    }
+
+    console.log(`[UsersService] 디스펜서 정보 조회: userId=${userId}, m_uid=${user.m_uid}, max_slot=3 (고정)`);
+    
+    return {
+      m_uid: user.m_uid,
+      max_slot: 3 // 항상 3개로 고정
+    };
+  }
+
+  /**
+   * 🔥 가족 구성원들의 m_uid 동기화 (기존 데이터 수정용)
+   */
+  async syncFamilyMuid(connect: string): Promise<{ updatedCount: number; m_uid: string | null }> {
+    // 해당 connect 그룹의 모든 사용자 조회
+    const allUsersInGroup = await this.usersRepository.find({
+      where: { connect }
+    });
+
+    if (allUsersInGroup.length === 0) {
+      throw new NotFoundException('해당 connect를 가진 사용자를 찾을 수 없습니다.');
+    }
+
+    // 부모 계정의 m_uid를 기준으로 동기화
+    const parentUser = allUsersInGroup.find(user => user.role === UserRole.PARENT);
+    if (!parentUser) {
+      throw new NotFoundException('부모 계정을 찾을 수 없습니다.');
+    }
+
+    const targetMuid = parentUser.m_uid;
+    let updatedCount = 0;
+
+    // 모든 가족 구성원의 m_uid를 부모와 동일하게 설정
+    for (const user of allUsersInGroup) {
+      if (user.m_uid !== targetMuid) {
+        user.m_uid = targetMuid;
+        await this.usersRepository.save(user);
+        updatedCount++;
+      }
+    }
+
+    console.log(`[UsersService] 가족 m_uid 동기화 완료: connect ${connect}`);
+    console.log(`[UsersService] 대상 m_uid: ${targetMuid}`);
+    console.log(`[UsersService] 업데이트된 사용자 수: ${updatedCount}명`);
+
+    return { updatedCount, m_uid: targetMuid };
   }
 }

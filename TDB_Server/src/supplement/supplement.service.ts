@@ -28,8 +28,11 @@ export class SupplementService {
     const supplementsWithSlot = await Promise.all(
       supplements.map(async (supplement) => {
         const machine = await this.machineRepo.findOne({
-          where: { medi_id: supplement.medi_id, owner: connect },
-          select: ['slot', 'total', 'remain']
+          where: { 
+            medi_id: supplement.medi_id, 
+            owner: connect 
+          },
+          select: ['machine_id', 'slot', 'total', 'remain']
         });
 
         return {
@@ -52,12 +55,22 @@ export class SupplementService {
     connect: string;
     medi_id: string;
     name: string;
+    manufacturer?: string;
+    ingredients?: string;
+    primaryFunction?: string;
+    intakeMethod?: string;
+    precautions?: string;
     warning?: boolean;
     start_date?: string;
     end_date?: string;
     slot?: number;
+    target_users?: string[] | null;
+    memberName?: string;
+    memberType?: string;
   }): Promise<Medicine> {
-    const { medi_id } = data;
+    const { medi_id, target_users } = data;
+    
+    console.log(`🔍 영양제 저장 요청 - connect: ${data.connect}, target_users:`, target_users);
     
     // 🔥 기기 연동 상태 확인 - connect 그룹의 부모 계정 m_uid 체크
     const parentUser = await this.userRepo.findOne({
@@ -77,10 +90,10 @@ export class SupplementService {
       throw new ConflictException('이미 등록된 영양제입니다.');
     }
 
-    // 🔥 자동 슬롯 할당 로직
+    // 🔥 자동 슬롯 할당: 영양제 + 의약품 합쳐서 최대 3개 제한
     let assignedSlot: number;
     
-    if (data.slot && data.slot >= 1 && data.slot <= 6) {
+    if (data.slot && data.slot >= 1 && data.slot <= 3) {
       // 사용자가 지정한 슬롯이 있고 유효한 경우
       const existingMachine = await this.machineRepo.findOne({
         where: { owner: data.connect, slot: data.slot },
@@ -91,32 +104,37 @@ export class SupplementService {
       }
       assignedSlot = data.slot;
     } else {
-      // 🔥 자동 슬롯 할당: 사용 중인 슬롯 조회 후 빈 슬롯 찾기
+      // 🔥 영양제 + 의약품 전체 슬롯 사용 현황 조회 
       const usedMachines = await this.machineRepo.find({
         where: { owner: data.connect },
-        select: ['slot', 'machine_id', 'medi_id']
+        select: ['machine_id', 'slot', 'medi_id']
       });
       
-      console.log(`🔍 영양제 - connect: ${data.connect}의 기존 Machine 레코드:`, usedMachines);
+      console.log(`🔍 영양제+의약품 - connect: ${data.connect}의 전체 Machine 레코드:`, usedMachines);
       
       const usedSlots = usedMachines.map(machine => machine.slot).filter(slot => slot !== null);
-      console.log(`🔍 영양제 - 현재 사용 중인 슬롯들:`, usedSlots);
+      console.log(`🔍 영양제+의약품 - 현재 사용 중인 슬롯들:`, usedSlots);
       
-      // 1번부터 6번까지 순차적으로 빈 슬롯 찾기
+      // 🔥 이미 3개 슬롯이 모두 사용 중인 경우 에러
+      if (usedSlots.length >= 3) {
+        throw new ConflictException('의약품과 영양제는 총 3개까지만 등록 가능합니다.');
+      }
+      
+      // 1번부터 3번까지 순차적으로 빈 슬롯 찾기
       assignedSlot = 1;
-      while (usedSlots.includes(assignedSlot) && assignedSlot <= 6) {
-        console.log(`🔍 영양제 - 슬롯 ${assignedSlot}번은 이미 사용 중, 다음 슬롯 확인...`);
+      while (usedSlots.includes(assignedSlot) && assignedSlot <= 3) {
+        console.log(`🔍 영양제+의약품 - 슬롯 ${assignedSlot}번은 이미 사용 중, 다음 슬롯 확인...`);
         assignedSlot++;
       }
       
-      if (assignedSlot > 6) {
-        throw new ConflictException('사용 가능한 디스펜서 슬롯이 없습니다. (최대 6개)');
+      if (assignedSlot > 3) {
+        throw new ConflictException('의약품과 영양제는 총 3개까지만 등록 가능합니다.');
       }
       
       console.log(`🔥 영양제 자동 할당된 슬롯: ${assignedSlot}번 (connect: ${data.connect})`);
     }
 
-    // medicine 테이블에 저장
+    // medicine 테이블에 저장 (🔥 target_users 추가)
     const supplement = this.medicineRepo.create({
       medi_id: data.medi_id,
       connect: data.connect,
@@ -124,15 +142,21 @@ export class SupplementService {
       warning: data.warning ?? false,
       start_date: data.start_date ? new Date(data.start_date) : null,
       end_date: data.end_date ? new Date(data.end_date) : null,
+      target_users: target_users, // 🔥 영양제도 유저 선택 기능 추가
     } as Medicine);
 
     const savedSupplement = await this.medicineRepo.save(supplement);
+    
+    if (target_users === null) {
+      console.log(`🔥 영양제 저장 완료 - connect: ${data.connect}, medi_id: ${medi_id}, 가족 공통 영양제`);
+    } else {
+      console.log(`🔥 영양제 저장 완료 - connect: ${data.connect}, medi_id: ${medi_id}, 개인 지정 영양제:`, target_users);
+    }
 
     // 🔥 영양제도 Machine 테이블에 슬롯 정보 저장
-    const slotMachineId = `${parentUser.m_uid}_SLOT${assignedSlot}`;
     const newMachine = this.machineRepo.create({
-      machine_id: slotMachineId, // 슬롯별 고유 ID
-      medi_id: medi_id || null,
+      machine_id: parentUser.m_uid, // 기존 기기 ID 재사용
+      medi_id: medi_id, // 🔥 복합키이므로 반드시 필요
       owner: data.connect,
       slot: assignedSlot,
       total: 100, // 영양제 기본 총량
@@ -142,7 +166,7 @@ export class SupplementService {
     });
 
     await this.machineRepo.save(newMachine);
-    console.log(`🔥 영양제 Machine 레코드 생성: ${slotMachineId} - 슬롯 ${assignedSlot}번에 ${medi_id} 등록`);
+    console.log(`🔥 영양제 Machine 레코드 생성: ${parentUser.m_uid} - 슬롯 ${assignedSlot}번에 ${medi_id} 등록`);
 
     // 🔥 할당된 슬롯 정보를 포함한 응답 반환
     return {

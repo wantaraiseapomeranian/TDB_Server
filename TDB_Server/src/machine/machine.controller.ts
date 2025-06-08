@@ -67,4 +67,24 @@ export class MachineController {
       targetDate,
     );
   }
+
+  // connect 기준, 가족 기기 상태 조회 (대시보드용)
+  @Get('family-status/:connect')
+  async getFamilyMachineStatus(@Param('connect') connect: string) {
+    try {
+      const result = await this.dispenserService.getMachineStatusByConnect(connect);
+      
+      return {
+        success: true,
+        message: '가족 기기 상태를 조회했습니다.',
+        data: result,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: error.message,
+        data: null,
+      };
+    }
+  }
 }

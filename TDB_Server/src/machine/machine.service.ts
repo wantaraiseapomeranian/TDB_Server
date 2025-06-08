@@ -40,7 +40,7 @@ export class DispenserService {
 
   async findAllMachine(): Promise<Machine[]> {
     return this.machineRepository.find({
-      relations: ['owner_user'],
+      relations: ['ownerUser'],
     });
   }
 
@@ -150,7 +150,7 @@ export class DispenserService {
   async getUsersByMachineId(m_uid: string) {
     const machines = await this.machineRepository.find({
       where: { machine_id: m_uid },
-      relations: ['owner_user'],
+      relations: ['ownerUser'],
     });
 
     const userMap = new Map<
@@ -159,7 +159,7 @@ export class DispenserService {
     >();
 
     for (const m of machines) {
-      const user = m.owner_user;
+      const user = m.ownerUser;
       if (user) {
         userMap.set(user.user_id, {
           user_id: user.user_id,
@@ -179,11 +179,11 @@ export class DispenserService {
 
     const machineRows = await this.machineRepository.find({
       where: { machine_id: m_uid },
-      relations: ['owner_user'],
+      relations: ['ownerUser'],
     });
 
     const connects = machineRows
-      .map((m) => m.owner_user?.connect)
+      .map((m) => m.ownerUser?.connect)
       .filter((c): c is string => !!c);
 
     if (connects.length === 0) {
@@ -198,12 +198,114 @@ export class DispenserService {
       .andWhere('FIND_IN_SET(:day, schedule.day_of_week)', { day: dayOfWeek })
       .getMany();
 
-    return schedules
-      .filter((s) => s.user && s.medicine)
-      .map((s) => ({
-        user_name: s.user.name,
-        medicine_name: s.medicine.name,
+    return schedules.map((s) => ({
+      user_id: s.user?.user_id,
+      user_name: s.user?.name,
+      medi_id: s.medi_id,
+      medicine_name: s.medicine?.name,
         time_of_day: s.time_of_day,
+      dose: s.dose,
       }));
+  }
+
+  // 🔥 connect 기반 가족 기기 상태 조회
+  async getMachineStatusByConnect(connect: string) {
+    try {
+      // 해당 connect의 가족 구성원들 조회
+      const familyMembers = await this.userRepository.find({
+        where: { connect },
+        select: ['user_id', 'name', 'role', 'm_uid']
+      });
+
+      if (!familyMembers.length) {
+        return {
+          connectedDevices: 0,
+          totalDevices: 0,
+          machineStatus: [],
+          lastUpdated: new Date().toISOString()
+        };
+      }
+
+      // 가족이 사용하는 모든 기기 ID 수집
+      const machineIds = [...new Set(
+        familyMembers
+          .map(member => member.m_uid)
+          .filter((m_uid): m_uid is string => !!m_uid)
+      )];
+
+      if (!machineIds.length) {
+        return {
+          connectedDevices: 0,
+          totalDevices: 0,
+          machineStatus: [],
+          lastUpdated: new Date().toISOString()
+        };
+      }
+
+      // 각 기기의 상세 정보 조회
+      const machineStatusPromises = machineIds.map(async (m_uid) => {
+        // 기기의 약물 잔여량 정보
+        const medicineRemain = await this.getMedicineRemainByMachine(m_uid);
+        
+        // 기기 기본 정보
+        const machineInfo = await this.machineRepository.findOne({
+          where: { machine_id: m_uid },
+          relations: ['ownerUser']
+        });
+
+        // 해당 기기를 사용하는 가족 구성원들
+        const machineUsers = familyMembers.filter(member => member.m_uid === m_uid);
+
+        // 전체 약물 슬롯 수와 활성 슬롯 수 계산
+        const totalSlots = medicineRemain.length;
+        const activeSlots = medicineRemain.filter(slot => 
+          slot.medi_id && !slot.medi_id.startsWith('TEMP_') && slot.remain > 0
+        ).length;
+        const lowStockSlots = medicineRemain.filter(slot => 
+          slot.remain > 0 && slot.remain < 5
+        ).length;
+
+        return {
+          machine_id: m_uid,
+          isConnected: true, // 기본적으로 연결된 것으로 가정
+          totalSlots,
+          activeSlots,
+          lowStockSlots,
+          users: machineUsers.map(user => ({
+            user_id: user.user_id,
+            name: user.name,
+            role: user.role
+          })),
+          medicineSlots: medicineRemain.map(slot => ({
+            slot: slot.slot,
+            medicine_name: slot.name,
+            total: slot.total,
+            remain: slot.remain,
+            isLowStock: slot.remain > 0 && slot.remain < 5
+          }))
+        };
+      });
+
+      const machineStatus = await Promise.all(machineStatusPromises);
+      
+      // 연결된 기기 수 계산
+      const connectedDevices = machineStatus.filter(machine => machine.isConnected).length;
+
+      return {
+        connectedDevices,
+        totalDevices: machineIds.length,
+        machineStatus,
+        lastUpdated: new Date().toISOString()
+      };
+
+    } catch (error) {
+      console.error('기기 상태 조회 오류:', error);
+      return {
+        connectedDevices: 0,
+        totalDevices: 0,
+        machineStatus: [],
+        lastUpdated: new Date().toISOString()
+      };
+    }
   }
 }

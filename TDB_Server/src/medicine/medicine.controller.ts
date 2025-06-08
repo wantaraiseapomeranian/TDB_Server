@@ -27,11 +27,55 @@ export class MedicineController {
   ) {}
 
   /**
+   * 🔥 새로 추가: 사용자별 약물 목록 조회 (권한 포함)
+   */
+  @Get('user/:userId')
+  async getMedicineListByUser(@Param('userId') userId: string) {
+    console.log(`🔍 [Controller] 사용자별 약물 조회 요청: userId=${userId}`);
+    
+    const medicines = await this.medicineService.getMedicineListByUser(userId);
+    
+    console.log(`🔍 [Controller] 조회된 약물 개수: ${medicines.length}`);
+    medicines.forEach((medicine, index) => {
+      console.log(`🔍 [Controller] 약물 ${index + 1}: ${medicine.name}`, {
+        medi_id: medicine.medi_id,
+        permission: medicine.permission,
+        slot: medicine.slot,
+        totalQuantity: medicine.totalQuantity,
+        doseCount: medicine.doseCount
+      });
+    });
+    
+    return {
+      success: true,
+      data: medicines
+    };
+  }
+
+  /**
    * 가족 연결 코드 기준 약 목록 조회
    */
   @Get('list/:connect')
   async getMedicineList(@Param('connect') connect: string) {
-    return this.medicineService.getMedicineListByConnect(connect);
+    console.log(`🔍 [Controller] 약 목록 조회 요청: connect=${connect}`);
+    
+    const medicines = await this.medicineService.getMedicineListByConnect(connect);
+    
+    console.log(`🔍 [Controller] 조회된 약 개수: ${medicines.length}`);
+    medicines.forEach((medicine, index) => {
+      console.log(`🔍 [Controller] 약 ${index + 1}: ${medicine.name}`, {
+        medi_id: medicine.medi_id,
+        slot: (medicine as any).slot,
+        totalQuantity: (medicine as any).totalQuantity,
+        doseCount: (medicine as any).doseCount
+      });
+    });
+    
+    // 🔥 표준화된 응답 형식으로 반환
+    return {
+      success: true,
+      data: medicines
+    };
   }
 
   /**
@@ -47,6 +91,7 @@ export class MedicineController {
       warning?: boolean;
       start_date?: string;
       end_date?: string;
+      target_users?: string[] | null;
       requestUser?: string;
     },
   ) {
@@ -77,7 +122,16 @@ export class MedicineController {
       warning: dto.warning,
       start_date: dto.start_date ? new Date(dto.start_date) : undefined,
       end_date: dto.end_date ? new Date(dto.end_date) : undefined,
+      target_users: dto.target_users,
     };
+    
+    console.log(`🔍 [Controller] 약물 등록 요청:`, {
+      medi_id: dto.medi_id,
+      name: dto.name,
+      target_users: dto.target_users,
+      requestUser: dto.requestUser
+    });
+    
     return this.medicineService.addMedicine(connect, medicineData);
   }
 
@@ -150,5 +204,37 @@ export class MedicineController {
   @Get('debug/connect/:connect')
   async debugConnectData(@Param('connect') connect: string) {
     return this.medicineService.debugConnectData(connect);
+  }
+
+  /**
+   * 수동 배출 요청
+   */
+  @Post('manual-dispense')
+  async requestManualDispense(@Body() request: {
+    medi_id: string;
+    slot: number;
+    m_uid: string;
+    dispense_count: number;
+    reason: 'guidance' | 'missed' | 'emergency' | 'extra';
+  }) {
+    console.log('🔥 [Controller] 수동 배출 요청:', request);
+    
+    try {
+      const result = await this.medicineService.processManualDispense(request);
+      
+      console.log('🔥 [Controller] 수동 배출 성공:', result);
+      return {
+        success: true,
+        data: result
+      };
+    } catch (error) {
+      console.error('🔥 [Controller] 수동 배출 실패:', error);
+      return {
+        success: false,
+        error: {
+          message: error.message || '수동 배출 처리 중 오류가 발생했습니다.'
+        }
+      };
+    }
   }
 }

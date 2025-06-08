@@ -7,8 +7,8 @@ export class Machine {
   @PrimaryColumn({ type: 'varchar', length: 50 })
   machine_id: string;
 
-  @Column({ type: 'varchar', length: 50, nullable: true })
-  medi_id: string | null;
+  @PrimaryColumn({ type: 'varchar', length: 50 })
+  medi_id: string;
 
   @Column({ type: 'varchar', length: 50 })
   owner: string;
@@ -28,13 +28,22 @@ export class Machine {
   @Column({ type: 'tinyint', nullable: true })
   slot: number;
 
-  // owner → users.connect
-  @ManyToOne(() => User, (user) => user.machines)
-  @JoinColumn({ name: 'owner', referencedColumnName: 'connect' })
-  owner_user: User;
+  @Column({ type: 'tinyint', default: 3 })
+  max_slot: number;
 
-  // medi_id → medicine.medi_id (nullable)
-  @ManyToOne(() => Medicine, { nullable: true })
+  // 관계 정의 (fk_machine_user_muid: machine_id → users.m_uid)
+  @ManyToOne(() => User, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'machine_id', referencedColumnName: 'm_uid' })
+  user: User;
+
+  // 관계 정의 (fk_machine_owner: owner → users.connect)
+  @ManyToOne(() => User)
+  @JoinColumn({ name: 'owner', referencedColumnName: 'connect' })
+  ownerUser: User;
+
+  // 관계 정의 (fk_machine_medi: medi_id → medicine.medi_id) 
+  // Note: 실제 DB에서는 단일 FK (medi_id만 참조)
+  @ManyToOne(() => Medicine)
   @JoinColumn({ name: 'medi_id', referencedColumnName: 'medi_id' })
-  medicine: Medicine | null;
+  medicine: Medicine;
 }
